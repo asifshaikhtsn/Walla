@@ -2,7 +2,7 @@ name: Scrape & Filter Proxies
 
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "7,37 * * * *"
   workflow_dispatch:
   push:
     branches: [main]
@@ -18,7 +18,7 @@ permissions:
 
 concurrency:
   group: walla-proxy-scrape
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   scrape:
