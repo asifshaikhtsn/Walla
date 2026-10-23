@@ -174,8 +174,10 @@ async def scrape_all(module, mode):
             results = await asyncio.gather(*(
                 module.scrape_source(session, src) for src in sources
             ), return_exceptions=True)
+            source_errors = []
             for src, items in zip(sources, results):
                 if isinstance(items, Exception):
+                    source_errors.append(f"{src.get('name') or src.get('id')}: {type(items).__name__}: {items}")
                     items = []
                 name = str(src.get("name") or src.get("id") or "source")
                 per_source[name] = len(items)
@@ -192,8 +194,10 @@ async def scrape_all(module, mode):
             results = await asyncio.gather(*(
                 scraper(session) for scraper in scrapers
             ), return_exceptions=True)
+            source_errors = []
             for scraper, items in zip(scrapers, results):
                 if isinstance(items, Exception):
+                    source_errors.append(f"{getattr(scraper, '__name__', 'source')}: {type(items).__name__}: {items}")
                     items = []
                 name = str(names.get(scraper) or getattr(scraper, "__name__", "source"))
                 per_source[name] = len(items)
@@ -204,7 +208,12 @@ async def scrape_all(module, mode):
                         "country": row.get("country") or "",
                         "source": name,
                     })
-    return core.dedup_records(scraped), per_source
+    if source_errors:
+        for error in source_errors:
+            print(f"::warning::Proxy source failed: {error}")
+    if not scraped:
+        raise RuntimeError("All proxy sources returned zero results; refusing to overwrite output")
+    return core.dedup_records(scraped), per_source, source_errors
 
 
 async def run_source_pool(module, mode):
@@ -226,7 +235,7 @@ async def run_source_pool(module, mode):
         f"dead={len(dead_existing)}, inconclusive={len(old_inconclusive)}"
     )
 
-    scraped, per_source = await scrape_all(module, mode)
+    scraped, per_source, source_errors = await scrape_all(module, mode)
     still_keys = {(row["address"], row["protocol"]) for row in still}
     eligible_all = []
     quarantine_skipped = 0
@@ -331,6 +340,9 @@ async def run_source_pool(module, mode):
             "selection": "30% fair-source coverage + 70% quality-ranked rotating fill",
         },
         "sources": sorted(per_source),
+        "source_errors": source_errors,
+        "failed_source_count": len(source_errors),
+        "empty_source_count": sum(1 for n in per_source.values() if n == 0),
         "per_source": dict(sorted(per_source.items(), key=lambda x: -x[1])),
         "source_quality": quality,
         "total_scraped": len(scraped),
