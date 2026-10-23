@@ -157,7 +157,7 @@ class HealthStore:
             "updated": now,
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self.path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
 
 
 def dedup_records(rows):
@@ -732,7 +732,12 @@ async def run_shaikh(module):
         health.success(row["address"], row["protocol"])
         new_rows.append(row)
 
-    merged = dedup_records(still + new_rows)
+    # Child repositories may contain stale or unverified entries. Validate
+    # newly imported rows locally before advertising them as live.
+    checked_new, failed_imports, inconclusive_imports = await validate(
+        new_rows, health, reachable, existing=False, concurrency=concurrency
+    )
+    merged = dedup_records(still + checked_new)
     unresolved = await apply_country(merged, only_missing=False)
     write_live_json(merged)
     country_counts, protocol_counts = write_country_tree(merged, root_all_files=True)
@@ -747,6 +752,10 @@ async def run_shaikh(module):
         "still_working": len(still),
         "new_fetched": len(child_rows),
         "new_deduped": len(new_rows),
+        "new_imports_validated": len(new_rows),
+        "new_imports_healthy": len(checked_new),
+        "new_imports_failed": len(failed_imports),
+        "new_imports_inconclusive": len(inconclusive_imports),
         "unique": len(merged),
         "dead_existing": len(dead_existing),
         "dead_total": health.active_count(),
