@@ -361,10 +361,12 @@ async def apply_country(records, only_missing=False):
         ip = row["address"].rsplit(":", 1)[0]
         if ip in country_map:
             row["country"] = country_map[ip]
-        elif row.get("country") in ("", None):
+        elif not only_missing:
+            # Never report an old or source-supplied country as freshly verified.
             row["country"] = "XX"
             unresolved += 1
-        elif row.get("country") == "XX":
+        elif row.get("country") in ("", None, "XX"):
+            row["country"] = "XX"
             unresolved += 1
     return unresolved
 
